@@ -288,7 +288,7 @@ static void vgem_unpin_pages(struct drm_vgem_gem_object *bo)
 static int vgem_prime_pin(struct drm_gem_object *obj)
 {
 	struct drm_vgem_gem_object *bo = to_vgem_bo(obj);
-	long n_pages = obj->size >> PAGE_SHIFT;
+	long n_pages __maybe_unused = obj->size >> PAGE_SHIFT;
 	struct page **pages;
 
 	pages = vgem_pin_pages(bo);
@@ -297,8 +297,12 @@ static int vgem_prime_pin(struct drm_gem_object *obj)
 
 	/* Flush the object from the CPU cache so that importers can rely
 	 * on coherent indirect access via the exported dma-address.
+	 * drm_clflush_pages() only does that on x86 and powerpc, elsewhere it
+	 * just warns, and GKI does not export it to vendor modules.
 	 */
+#if defined(CONFIG_X86) || defined(__powerpc__)
 	drm_clflush_pages(pages, n_pages);
+#endif
 
 	return 0;
 }
@@ -386,8 +390,10 @@ static int vgem_prime_mmap(struct drm_gem_object *obj,
 	if (ret)
 		return ret;
 
+	/* vma_set_file(), open coded: GKI does not export it to vendor modules */
+	get_file(obj->filp);
 	fput(vma->vm_file);
-	vma->vm_file = get_file(obj->filp);
+	vma->vm_file = obj->filp;
 	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
 	vma->vm_page_prot = pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
 

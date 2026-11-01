@@ -26,6 +26,7 @@
  */
 
 #include <mali_kbase.h>
+#include <linux/sched/task.h>
 #include <gpu/mali_kbase_gpu_regmap.h>
 #include <mali_kbase_mem_linux.h>
 #include <mali_kbase_dma_fence.h>
@@ -144,6 +145,16 @@ int kbase_context_common_init(struct kbase_context *kctx)
 	kctx->tgid = current->tgid;
 	kctx->pid = current->pid;
 
+	/* Hold a reference on the thread group leader for the lifetime of the
+	 * context. The numeric tgid is only meaningful in the init pid
+	 * namespace, so it must not be looked up again from a caller that may
+	 * be in another namespace. Kernel contexts have no filp.
+	 */
+	if (likely(kctx->filp)) {
+		kctx->task = current->group_leader;
+		get_task_struct(kctx->task);
+	}
+
 	atomic_set(&kctx->used_pages, 0);
 
 	mutex_init(&kctx->reg_lock);
@@ -253,6 +264,9 @@ void kbase_context_common_term(struct kbase_context *kctx)
 	 */
 	if (atomic_read(&kctx->kbdev->timeline_flags) != 0)
 		kbase_timeline_streams_flush(kctx->kbdev->timeline);
+
+	if (kctx->task)
+		put_task_struct(kctx->task);
 
 	vfree(kctx);
 }
