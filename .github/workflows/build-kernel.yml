@@ -175,4 +175,6 @@ jobs:
           name: RM6785-kernel-${{ github.run_number }}${{ github.event.inputs.build_bakasu == 'true' && '-bakasu' || '' }}
           path: artifacts/
           if-no-files-found: warn
+          # actions/upload-artifact skips dotfiles (including out/.config) by default.
+          include-hidden-files: true
           retention-days: 30
