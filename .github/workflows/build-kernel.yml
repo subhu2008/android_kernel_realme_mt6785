@@ -16,17 +16,12 @@ on:
 permissions:
   contents: read
 
+# Serialize builds on a branch so a run is not cancelled before ccache saves.
+concurrency:
+  group: build-kernel-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
-  ARCH: arm64
-  SUBARCH: arm64
-  CC: ccache clang
-  HOSTCC: ccache clang
-  CXX: ccache clang++
-  HOSTCXX: ccache clang++
-  CROSS_COMPILE: aarch64-linux-gnu-
-  CLANG_TRIPLE: aarch64-linux-gnu-
-  LLVM: "1"
-  LLVM_IAS: "1"
   CCACHE_COMPILERCHECK: content
   CCACHE_BASEDIR: ${{ github.workspace }}
 
@@ -128,11 +123,16 @@ jobs:
           else
             echo "BakaSU disabled: building without CONFIG_KSU"
           fi
-          make -j8 O=out "${configs[@]}"
+          .github/scripts/kernel-make.sh "${configs[@]}"
 
       - name: Build kernel
         run: |
-          make -j8 O=out
+          .github/scripts/kernel-make.sh
+
+      - name: Show ccache statistics
+        if: always()
+        run: |
+          ccache --show-stats || true
 
       - name: Collect Image and other kernel artifacts
         if: always()
