@@ -5255,10 +5255,9 @@ CONFIG_SBITMAP=y
 # CONFIG_STRING_SELFTEST is not set
 
 #
-# BakaSU
+# BakaSU (disabled by default; merge bakasu.config to enable)
 #
-CONFIG_KSU=y
-CONFIG_KSU_MANUAL_HOOK=y
+# CONFIG_KSU is not set
 
 #
 # Droidspaces config

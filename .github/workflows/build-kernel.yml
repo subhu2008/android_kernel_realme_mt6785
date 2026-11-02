@@ -2,6 +2,12 @@ name: Build RM6785 kernel
 
 on:
   workflow_dispatch:
+    inputs:
+      build_bakasu:
+        description: "Build with BakaSU (4.14 manual hooks)"
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - "**"
@@ -29,12 +35,21 @@ jobs:
     name: Build kernel (RM6785_defconfig + mali_kbase_dri.config)
     runs-on: ubuntu-26.04
     timeout-minutes: 360
+    env:
+      BUILD_BAKASU: ${{ github.event.inputs.build_bakasu }}
 
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          submodules: recursive
+
+      - name: Prepare BakaSU version info
+        if: github.event.inputs.build_bakasu == 'true'
+        run: |
+          git -C KernelSU fetch --tags --unshallow origin 2>/dev/null || git -C KernelSU fetch --tags origin
+          echo "BakaSU revision: $(git -C KernelSU describe --tags --always --dirty)"
 
       - name: Install build dependencies
         run: |
@@ -78,8 +93,16 @@ jobs:
           verbose: "0"
 
       - name: Configure kernel
+        shell: bash
         run: |
-          make -j8 O=out RM6785_defconfig mali_kbase_dri.config
+          configs=(RM6785_defconfig mali_kbase_dri.config)
+          if [ "${BUILD_BAKASU:-false}" = "true" ]; then
+            echo "BakaSU enabled: merging arch/arm64/configs/bakasu.config"
+            configs+=(bakasu.config)
+          else
+            echo "BakaSU disabled: building without CONFIG_KSU"
+          fi
+          make -j8 O=out "${configs[@]}"
 
       - name: Build kernel
         run: |
@@ -123,7 +146,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RM6785-kernel-${{ github.run_number }}
+          name: RM6785-kernel-${{ github.run_number }}${{ github.event.inputs.build_bakasu == 'true' && '-bakasu' || '' }}
           path: artifacts/
           if-no-files-found: warn
           retention-days: 30
