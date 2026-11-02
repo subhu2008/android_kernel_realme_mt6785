@@ -27,7 +27,7 @@ env:
 jobs:
   build:
     name: Build kernel (RM6785_defconfig + mali_kbase_dri.config)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 360
 
     steps:
@@ -41,7 +41,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             bc bison flex libssl-dev libelf-dev libncurses-dev \
-            ccache clang lld llvm \
+            ccache clang clang-21 lld lld-21 llvm llvm-21 \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             cpio kmod device-tree-compiler xz-utils zstd lz4 \
             python3 perl
@@ -50,6 +50,14 @@ jobs:
           ld.lld --version
           ccache --version | head -n 1
           aarch64-linux-gnu-gcc --version | head -n 1
+          clang --version | grep -q 'clang version 21\.' || {
+            echo "::error::Clang 21 is required, but the default clang is not version 21"
+            exit 1
+          }
+          ld.lld --version | grep -q 'LLVM 21\.' || {
+            echo "::error::LLD 21 is required, but the default ld.lld is not version 21"
+            exit 1
+          }
 
       # Full LTO + -j8 can be memory hungry on a 4-core/16 GB runner.
       - name: Add swap space
@@ -65,7 +73,7 @@ jobs:
       - name: Restore ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
-          key: rm6785-${{ runner.os }}-clang18
+          key: rm6785-${{ runner.os }}-clang21
           max-size: 5G
           verbose: "0"
 
