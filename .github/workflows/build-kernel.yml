@@ -1,0 +1,121 @@
+name: Build RM6785 kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  ARCH: arm64
+  SUBARCH: arm64
+  CC: ccache clang
+  HOSTCC: ccache clang
+  CXX: ccache clang++
+  HOSTCXX: ccache clang++
+  CROSS_COMPILE: aarch64-linux-gnu-
+  CLANG_TRIPLE: aarch64-linux-gnu-
+  LLVM: "1"
+  LLVM_IAS: "1"
+  CCACHE_COMPILERCHECK: content
+  CCACHE_BASEDIR: ${{ github.workspace }}
+
+jobs:
+  build:
+    name: Build kernel (RM6785_defconfig + mali_kbase_dri.config)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev libncurses-dev \
+            ccache clang lld llvm \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            cpio kmod device-tree-compiler xz-utils zstd lz4 \
+            python3 perl
+          echo "--- toolchain versions ---"
+          clang --version
+          ld.lld --version
+          ccache --version | head -n 1
+          aarch64-linux-gnu-gcc --version | head -n 1
+
+      # Full LTO + -j8 can be memory hungry on a 4-core/16 GB runner.
+      - name: Add swap space
+        run: |
+          sudo swapoff /swapfile 2>/dev/null || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=none
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Restore ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: rm6785-${{ runner.os }}-clang18
+          max-size: 5G
+          verbose: "0"
+
+      - name: Configure kernel
+        run: |
+          make -j8 O=out RM6785_defconfig mali_kbase_dri.config
+
+      - name: Build kernel
+        run: |
+          make -j8 O=out
+
+      - name: Collect Image and other kernel artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+
+          # Pick up every Image variant, wherever the build put it.
+          mapfile -d '' images < <(
+            find out -type f \
+              \( -name 'Image' -o -name 'Image.*' -o -name 'Image-dtb' \) \
+              -print0 2>/dev/null || true
+          )
+
+          if [ "${#images[@]}" -gt 0 ]; then
+            printf 'Found Image artifacts:\n'
+            printf '  %s\n' "${images[@]}"
+            cp --parents "${images[@]}" artifacts/
+          else
+            echo "::warning::No Image file was found under out/"
+          fi
+
+          # Helpful companions for flashing/debugging.
+          find out -maxdepth 1 -type f \
+            \( -name '.config' -o -name 'System.map' -o -name 'vmlinux' -o -name 'Module.symvers' \) \
+            -exec cp --parents {} artifacts/ \;
+          find out/arch/arm64/boot/dts -type f \
+            \( -name '*.dtb' -o -name '*.dtbo' \) \
+            -exec cp --parents {} artifacts/ \; 2>/dev/null || true
+
+          echo "--- artifact contents ---"
+          find artifacts -type f -printf '%p (%s bytes)\n' | sort
+
+      - name: Upload kernel artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RM6785-kernel-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
