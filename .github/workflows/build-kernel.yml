@@ -54,7 +54,7 @@ jobs:
             echo "::error::Clang 21 is required, but the default clang is not version 21"
             exit 1
           }
-          ld.lld --version | grep -q 'LLVM 21\.' || {
+          ld.lld --version | grep -Eq '(LLVM|LLD) 21\.' || {
             echo "::error::LLD 21 is required, but the default ld.lld is not version 21"
             exit 1
           }
@@ -111,7 +111,7 @@ jobs:
           # Helpful companions for flashing/debugging.
           find out -maxdepth 1 -type f \
             \( -name '.config' -o -name 'System.map' -o -name 'vmlinux' -o -name 'Module.symvers' \) \
-            -exec cp --parents {} artifacts/ \;
+            -exec cp --parents {} artifacts/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -type f \
             \( -name '*.dtb' -o -name '*.dtbo' \) \
             -exec cp --parents {} artifacts/ \; 2>/dev/null || true
