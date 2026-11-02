@@ -52,14 +52,40 @@ jobs:
           echo "BakaSU revision: $(git -C KernelSU describe --tags --always --dirty)"
 
       - name: Install build dependencies
+        timeout-minutes: 20
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            bc bison flex libssl-dev libelf-dev libncurses-dev \
-            ccache clang clang-21 lld lld-21 llvm llvm-21 \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            cpio kmod device-tree-compiler xz-utils zstd lz4 \
-            python3 perl
+          set -euo pipefail
+
+          # Fresh runner images sometimes still have apt/dpkg lock holders.
+          sudo systemctl stop unattended-upgrades.service apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+          sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+          sudo pkill -9 -f '[u]nattended-upgrade' 2>/dev/null || true
+
+          APT_OPTS=(
+            -o Acquire::ForceIPv4=true
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+            -o Acquire::Retries=3
+            -o DPkg::Lock::Timeout=180
+            -o Dpkg::Options::=--force-confdef
+            -o Dpkg::Options::=--force-confold
+          )
+
+          sudo env DEBIAN_FRONTEND=noninteractive timeout 300 \
+            apt-get "${APT_OPTS[@]}" update
+          sudo env DEBIAN_FRONTEND=noninteractive timeout 900 \
+            apt-get "${APT_OPTS[@]}" install -y --no-install-recommends \
+              bc bison flex libssl-dev libelf-dev libncurses-dev \
+              ccache clang clang-21 lld lld-21 llvm llvm-21 \
+              gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+              cpio kmod device-tree-compiler xz-utils zstd lz4 \
+              python3 perl
+
+      - name: Verify Clang 21 toolchain
+        run: |
           echo "--- toolchain versions ---"
           clang --version
           ld.lld --version
